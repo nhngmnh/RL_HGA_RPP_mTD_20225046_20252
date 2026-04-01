@@ -76,10 +76,10 @@ class Decoder:
     # Public
     # ------------------------------------------------------------------
 
-    def decode(self, chrom: Chromosome) -> DecodedSolution:
+    def decode(self, chrom: Chromosome, w_inf: float = 1.0) -> DecodedSolution:
         truck_routes = []
         for k in range(1, self.fleet.num_trucks + 1):
-            route = self._decode_system(k, chrom)
+            route = self._decode_system(k, chrom, w_inf)
             truck_routes.append(route)
 
         total_violation = sum(
@@ -100,7 +100,7 @@ class Decoder:
     # Decode một truck system
     # ------------------------------------------------------------------
 
-    def _decode_system(self, k: int, chrom: Chromosome) -> TruckRoute:
+    def _decode_system(self, k: int, chrom: Chromosome, w_inf: float = 1.0) -> TruckRoute:
         fleet       = self.fleet
         depot       = fleet.depot_id
         tid         = fleet.truck_id(k)
@@ -154,6 +154,7 @@ class Decoder:
                     t_prev_service,
                     truck_clock, truck_node, truck_edge_cnt,
                     raw_stops,
+                    w_inf,
                 )
                 sorties.append(sortie)
 
@@ -253,16 +254,17 @@ class Decoder:
         t_prev_service: float,
         truck_clock:    float,
         truck_node:     int,
-        truck_edge_cnt: int,       # edge_count hiện tại của truck
+        truck_edge_cnt: int,
         raw_stops:      list[TruckStop],
+        w_inf:          float = 1.0,
     ) -> Sortie:
         """
-        Tìm land_stop tối ưu từ tập candidates.
+        Tìm land_stop minimize penalized rendezvous time:
+            cost = rendezvous_time + w_inf * max(0, flight_time - τ)
 
-        Launch: tại truck_node hiện tại (thời điểm truck_clock, edge_count=truck_edge_cnt).
-        Land candidates: stops S trong raw_stops thỏa:
-            S.edge_count - truck_edge_cnt <= δ   ← đúng theo paper
-            S.edge_count > truck_edge_cnt         ← phải sau launch
+        Xét tất cả candidates trong δ hop, kể cả vi phạm τ.
+        Tiebreak: hops xa nhất.
+        Fallback: land tại launch_node (0 hop).
         """
         fleet   = self.fleet
         first_u, _, _ = self._edge_endpoints(edge_group[0])
@@ -275,45 +277,45 @@ class Decoder:
         fly_to_first   = self.drone_dist(launch_node, first_u) / fleet.drone_speed
         t_service_this = launch_time + fly_to_first
         flight_to_end  = self._calc_flight_time_to_end(edge_group, launch_node)
+        seq_feasible   = t_service_this >= t_prev_service - 1e-9
 
-        seq_feasible = t_service_this >= t_prev_service - 1e-9
-
-        # Fallback: land tại launch_node (0 hop), drone bay ra rồi quay về
+        # Fallback: land tại launch_node (0 hop)
         fly_back_fallback = self.drone_dist(last_v, launch_node) / fleet.drone_speed
         fallback_flight   = flight_to_end + fly_back_fallback
-        fallback_done     = launch_time + fallback_flight
+        fallback_rv       = launch_time + fallback_flight
+        fallback_cost     = fallback_rv + w_inf * max(0.0, fallback_flight - fleet.max_flight_time)
 
         best_land_node  = launch_node
         best_land_ec    = launch_ec
-        best_rendezvous = fallback_done    # truck đứng tại launch, chờ drone
         best_flight     = fallback_flight
+        best_rendezvous = fallback_rv
+        best_cost       = fallback_cost
+        best_hops       = 0
 
         for stop in raw_stops:
-            # Chỉ xét stops SAU launch theo edge_count
             hops = stop.edge_count - launch_ec
             if hops <= 0:
                 continue
             if hops > fleet.delta:
-                break   # raw_stops đã sorted theo edge_count tăng dần
+                break
 
-            fly_back     = self.drone_dist(last_v, stop.node) / fleet.drone_speed
-            total_flight = flight_to_end + fly_back
-
-            if total_flight > fleet.max_flight_time:
-                continue
-
+            fly_back        = self.drone_dist(last_v, stop.node) / fleet.drone_speed
+            total_flight    = flight_to_end + fly_back
             drone_done      = launch_time + total_flight
             rendezvous_time = max(drone_done, stop.time)
+            violation       = max(0.0, total_flight - fleet.max_flight_time)
+            cost            = rendezvous_time + w_inf * violation
 
-            # Minimize rendezvous_time, tiebreak: hops xa hơn
-            if (rendezvous_time < best_rendezvous - 1e-9) or (
-                abs(rendezvous_time - best_rendezvous) < 1e-9
-                and hops > best_land_ec - launch_ec
+            # Chọn nếu cost tốt hơn, tiebreak: hops xa hơn
+            if cost < best_cost - 1e-9 or (
+                abs(cost - best_cost) < 1e-9 and hops > best_hops
             ):
-                best_rendezvous = rendezvous_time
                 best_land_node  = stop.node
                 best_land_ec    = stop.edge_count
                 best_flight     = total_flight
+                best_rendezvous = rendezvous_time
+                best_cost       = cost
+                best_hops       = hops
 
         sortie = Sortie(
             drone_id=drone_id,
@@ -326,7 +328,6 @@ class Decoder:
             flight_time=best_flight,
             feasible=seq_feasible and best_flight <= fleet.max_flight_time,
         )
-        # Lưu edge_count của land stop để propagate sau
         sortie._land_edge_count = best_land_ec
         return sortie
 
