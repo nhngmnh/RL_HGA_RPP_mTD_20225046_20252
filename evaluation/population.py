@@ -38,12 +38,13 @@ class Population:
     # Sau mỗi generation
     # ------------------------------------------------------------------
 
-    def update(self, new_offspring: list[Individual]) -> None:
+    def update(self, new_offspring: list[Individual], *, already_evaluated: bool = False) -> None:
         """
         Thêm offspring vào population, evaluate, rồi trim.
         Bảo toàn top 1% elites qua trim.
         """
-        self.evaluator.evaluate_many(new_offspring)
+        if not already_evaluated:
+            self.evaluator.evaluate_many(new_offspring)
         self.individuals.extend(new_offspring)
         self._trim()
 

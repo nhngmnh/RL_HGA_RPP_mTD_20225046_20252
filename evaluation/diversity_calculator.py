@@ -6,22 +6,18 @@ from data.chromosome import Chromosome
 class DiversityCalculator:
     """
     Tính diversity score cho từng Individual trong population.
-
-    Theo Section 4.4 của paper:
-        δ(I) = normalized Hamming distance trung bình tới 2 nearest neighbors
-
+    δ(I) = normalized Hamming distance trung bình tới 2 nearest neighbors
     Hamming distance giữa 2 chromosomes:
-        - Đếm số vị trí mà service_sequence khác nhau (theo abs value)
+        - Đếm số vị trí mà service_sequence khác nhau (theo absolute value)
           HOẶC vehicle_assignment khác nhau
         - Normalize bằng cách chia cho R (độ dài chromosome)
-
     "Nearest neighbor" = individual có Hamming distance nhỏ nhất.
     """
 
     def update_diversity(self, population: list[Individual]) -> None:
         """
         Tính và gán diversity score cho tất cả individuals.
-        Complexity: O(N^2 * R) — chấp nhận được với N <= 200, R <= 100.
+        Complexity: O(N^2 * R) — (chấp nhận được với N <= 500, R <= 100.)
         """
         n = len(population)
         if n < 3:

@@ -38,6 +38,7 @@ class HGA:
         truck_dist_fn,
         drone_dist_fn,
         edge_info_fn,
+        truck_path_fn,
     ):
         self.fleet  = fleet
         self.params = params
@@ -46,7 +47,7 @@ class HGA:
             random.seed(params.seed)
 
         # --- Evaluation ---
-        self.decoder   = Decoder(fleet, truck_dist_fn, drone_dist_fn, edge_info_fn)
+        self.decoder   = Decoder(fleet, truck_dist_fn, drone_dist_fn, edge_info_fn, truck_path_fn)
         self.evaluator = FitnessEvaluator(self.decoder, params, w_inf=params.winf_min)
         self.diversity = DiversityCalculator()
         self.pop       = Population(params, self.evaluator, self.diversity)
@@ -113,7 +114,7 @@ class HGA:
             offspring = self._local_search(offspring)
 
             # Cập nhật population
-            self.pop.update(offspring)
+            self.pop.update(offspring, already_evaluated=True)
 
             # Cập nhật best
             current_best = self.pop.best()

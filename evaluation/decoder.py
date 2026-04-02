@@ -25,7 +25,6 @@ class TruckStop:
     node:       int
     time:       float   # wall-clock (được cập nhật khi có wait)
     edge_count: int     # số required-edge truck đã traverse tính đến đây
-                        # tăng 1 sau mỗi required edge, KHÔNG tăng ở intermediate nodes
 
 
 @dataclass

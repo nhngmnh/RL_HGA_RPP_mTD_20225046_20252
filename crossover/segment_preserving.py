@@ -1,7 +1,7 @@
 import random
 from data.chromosome import Chromosome
 from data.fleet_config import FleetConfig
-from ..mutation.base import CrossoverOperator
+from mutation.base import CrossoverOperator
 from .ox_crossover import OXCrossover
 from .pmx_crossover import PMXCrossover
 

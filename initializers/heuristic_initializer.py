@@ -1,4 +1,5 @@
 import random
+import math
 from data.chromosome import Chromosome
 from data.fleet_config import FleetConfig
 
@@ -69,16 +70,35 @@ class HeuristicInitializer:
                 u, v, _ = self.edge_info(eid)
                 # Thử vào từ u (chiều u→v)
                 d_uv = self.truck_dist(current_node, u)
-                if d_uv < best_dist:
+                if math.isfinite(d_uv) and d_uv < best_dist:
                     best_dist   = d_uv
                     best_eid    = eid
                     best_signed = eid          # dương = u→v
                 # Thử vào từ v (chiều v→u)
                 d_vu = self.truck_dist(current_node, v)
-                if d_vu < best_dist:
+                if math.isfinite(d_vu) and d_vu < best_dist:
                     best_dist   = d_vu
                     best_eid    = eid
                     best_signed = -eid         # âm = v→u
+
+            # Nếu graph không liên thông (hoặc current_node không reach được endpoint nào),
+            # mọi distance có thể = inf → best_eid vẫn None.
+            # Fallback: chọn ngẫu nhiên một edge để không crash.
+            if best_eid is None:
+                best_eid = random.choice(tuple(unvisited))
+                u, v, _ = self.edge_info(best_eid)
+                d_uv = self.truck_dist(current_node, u)
+                d_vu = self.truck_dist(current_node, v)
+                if math.isfinite(d_uv) and not math.isfinite(d_vu):
+                    best_signed = best_eid
+                elif math.isfinite(d_vu) and not math.isfinite(d_uv):
+                    best_signed = -best_eid
+                elif d_uv < d_vu:
+                    best_signed = best_eid
+                elif d_vu < d_uv:
+                    best_signed = -best_eid
+                else:
+                    best_signed = best_eid if random.random() < 0.5 else -best_eid
 
             seq.append(best_signed)
             unvisited.remove(best_eid)

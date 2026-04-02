@@ -1,6 +1,6 @@
 import random
 from data.chromosome import Chromosome
-from ..mutation.base import CrossoverOperator
+from mutation.base import CrossoverOperator
 
 
 class PMXCrossover(CrossoverOperator):
