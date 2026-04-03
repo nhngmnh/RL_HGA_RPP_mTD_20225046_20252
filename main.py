@@ -30,9 +30,9 @@ def main():
     instance_path = os.path.join(
         os.path.dirname(__file__),
         "dataset",
-        "N10",
-        "N10E30R10",
-        "N10E30R10_01.txt",
+        "N20",
+        "N20E50R20",
+        "N20E50R20_01.txt",
     )
     inst = load_urpp_like_instance(instance_path)
 

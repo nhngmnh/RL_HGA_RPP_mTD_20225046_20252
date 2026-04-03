@@ -110,11 +110,14 @@ class HGA:
             # Sinh offspring đến PH
             offspring = self._generate_offspring()
 
+            # Evaluate offspring trước (để local search chỉ dùng makespan đã có sẵn)
+            self.evaluator.evaluate_many(offspring)
+
             # Local search trên top ls_top_ratio offspring
             # offspring = self._local_search(offspring)
 
             # Cập nhật population
-            self.pop.update(offspring, already_evaluated=False)
+            self.pop.update(offspring, already_evaluated=True)
 
             # Cập nhật best
             current_best = self.pop.best()
@@ -182,8 +185,12 @@ class HGA:
     # ------------------------------------------------------------------
 
     def _local_search(self, offspring: list[Individual]) -> list[Individual]:
-        # Evaluate trước để có makespan
-        self.evaluator.evaluate_many(offspring)
+        # Offspring phải được evaluate trước khi vào local search
+        if any(ind.makespan == math.inf for ind in offspring):
+            raise ValueError(
+                "Offspring must be evaluated before local search. "
+                "Call evaluator.evaluate_many(offspring) before _local_search()."
+            )
 
         n_ls = max(1, int(self.params.ls_top_ratio * len(offspring)))
         offspring.sort(key=lambda x: x.makespan)
