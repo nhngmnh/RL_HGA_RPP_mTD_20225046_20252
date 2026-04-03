@@ -111,10 +111,10 @@ class HGA:
             offspring = self._generate_offspring()
 
             # Local search trên top ls_top_ratio offspring
-            offspring = self._local_search(offspring)
+            # offspring = self._local_search(offspring)
 
             # Cập nhật population
-            self.pop.update(offspring, already_evaluated=True)
+            self.pop.update(offspring, already_evaluated=False)
 
             # Cập nhật best
             current_best = self.pop.best()

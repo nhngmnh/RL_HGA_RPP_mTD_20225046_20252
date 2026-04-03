@@ -86,7 +86,7 @@ def main():
     results_path = os.path.join(os.path.dirname(__file__), "results.csv")
     append_result(
         results_path,
-        algorithm="HGA",
+        algorithm="GA",
         datasetname=inst.name,
         num_trucks=fleet.num_trucks,
         drones_per_truck=fleet.drones_per_truck,
