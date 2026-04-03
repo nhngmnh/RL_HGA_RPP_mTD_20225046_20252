@@ -1,0 +1,2 @@
+STT,Althgorithm,Datasetname,num_trucks,drones_per_truck,makespan (hours),Fitness,run time,Service seq,Vehicle asgn
+1,HGA,N10E30R10_01,2,1,0.5395284707521047,0.49228926592542077,47.48456720006652,"[-5, 1, -7, 2, -6, -4, -9, 3, -10, 8]","[4, 4, 4, 2, 2, 1, 2, 2, 2, 4]"
