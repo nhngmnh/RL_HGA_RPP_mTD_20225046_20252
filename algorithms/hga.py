@@ -114,7 +114,7 @@ class HGA:
             self.evaluator.evaluate_many(offspring)
 
             # Local search trên top ls_top_ratio offspring
-            # offspring = self._local_search(offspring)
+            offspring = self._local_search(offspring)
 
             # Cập nhật population
             self.pop.update(offspring, already_evaluated=True)
