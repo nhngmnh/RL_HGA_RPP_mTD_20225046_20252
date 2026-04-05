@@ -33,14 +33,14 @@ def main():
     hga_params = get_hga_params()
     ga_params = get_ga_params()
 
-    # --- Batch run: N20E50R20_01.txt .. N20E50R20_05.txt ---
+    # --- Batch run: N10E30R10_01.txt .. N10E30R10_05.txt ---
     for idx in range(1, 6):
-        instance_filename = f"N20E50R20_{idx:02d}.txt"
+        instance_filename = f"N10E30R10_{idx:02d}.txt"
         instance_path = os.path.join(
             os.path.dirname(__file__),
             "dataset",
-            "N20",
-            "N20E50R20",
+            "N10",
+            "N10E30R10",
             instance_filename,
         )
         inst = load_urpp_like_instance(instance_path)
