@@ -50,19 +50,22 @@ class SegmentPreservingCrossover(CrossoverOperator):
         # Áp OX hoặc PMX lên segment (chọn ngẫu nhiên)
         sub_op = self._ox if random.random() < 0.5 else self._pmx
 
-        # Chỉ cross nếu segment đủ dài VÀ cùng độ dài
-        if sub_p1.length >= 2 and sub_p2.length >= 2 and sub_p1.length == sub_p2.length:
+        # Nếu segment cùng độ dài thì dùng OX/PMX chuẩn.
+        # Nếu lệch độ dài, vẫn lai theo biến thể OX/PMX (variable-length):
+        # mapping vượt index -> gán "invalid" (None) rồi lấp đầy.
+        if sub_p1.length == sub_p2.length and sub_p1.length >= 2:
             sub_o1, sub_o2 = sub_op.cross(sub_p1, sub_p2)
-            # Reintegrate vào bản sao của parent
-            o1 = self._reintegrate(p1, indices_p1, sub_o1)
-            o2 = self._reintegrate(p2, indices_p2, sub_o2)
         else:
-            # Độ dài khác nhau: swap toàn bộ segment giữa hai parent
-            o1 = self._reintegrate(p1, indices_p1, sub_p2 if sub_p2.length == len(indices_p1) else sub_p1)
-            o2 = self._reintegrate(p2, indices_p2, sub_p1 if sub_p1.length == len(indices_p2) else sub_p2)
-            # Nếu vẫn không khớp, trả về clone
-            if sub_p2.length != len(indices_p1) or sub_p1.length != len(indices_p2):
-                return p1.clone(), p2.clone()
+            if isinstance(sub_op, OXCrossover):
+                sub_o1 = self._variable_length_ox(sub_p1, sub_p2)
+                sub_o2 = self._variable_length_ox(sub_p2, sub_p1)
+            else:
+                sub_o1 = self._variable_length_pmx(sub_p1, sub_p2)
+                sub_o2 = self._variable_length_pmx(sub_p2, sub_p1)
+
+        # Reintegrate vào bản sao của parent
+        o1 = self._reintegrate(p1, indices_p1, sub_o1)
+        o2 = self._reintegrate(p2, indices_p2, sub_o2)
 
         # Repair duplicate / missing
         all_eids = [abs(e) for e in p1.service_sequence]
@@ -112,3 +115,171 @@ class SegmentPreservingCrossover(CrossoverOperator):
             seq[idx] = sign * eid
 
         return Chromosome(seq, chrom.vehicle_assignment[:])
+
+    @staticmethod
+    def _variable_length_ox(primary: Chromosome, secondary: Chromosome) -> Chromosome:
+        """Biến thể OX cho 2 segment lệch độ dài.
+
+        Output có đúng độ dài của primary.
+        - Copy đoạn [i:j] từ primary
+        - Fill phần còn lại theo thứ tự xuất hiện từ secondary (bỏ trùng theo abs(eid))
+        - Nếu thiếu gene (do secondary ngắn), fill tiếp từ phần còn lại của primary
+        """
+        Lp = primary.length
+        if Lp == 0:
+            return Chromosome([], [])
+        if Lp < 2:
+            return primary.clone()
+
+        i, j = sorted(random.sample(range(Lp), 2))
+
+        out_seq: list[int | None] = [None] * Lp
+        out_asg: list[int | None] = [None] * Lp
+
+        out_seq[i:j+1] = primary.service_sequence[i:j+1]
+        out_asg[i:j+1] = primary.vehicle_assignment[i:j+1]
+        copied = {abs(e) for e in primary.service_sequence[i:j+1]}
+
+        # Vị trí cần lấp theo kiểu OX (xoay vòng từ j+1)
+        fill_pos = [(j + 1 + k) % Lp for k in range(Lp - (j - i + 1))]
+
+        # Candidate từ secondary (xoay vòng cho gần OX), rồi fallback sang primary
+        sec_pairs = list(zip(secondary.service_sequence, secondary.vehicle_assignment))
+        if sec_pairs:
+            start = (j + 1) % len(sec_pairs)
+            sec_pairs = sec_pairs[start:] + sec_pairs[:start]
+
+        prim_pairs = list(zip(primary.service_sequence, primary.vehicle_assignment))
+        prim_start = (j + 1) % len(prim_pairs)
+        prim_pairs = prim_pairs[prim_start:] + prim_pairs[:prim_start]
+
+        fill_pairs: list[tuple[int, int]] = []
+        for eid, vid in sec_pairs:
+            if abs(eid) not in copied:
+                fill_pairs.append((eid, vid))
+                copied.add(abs(eid))
+
+        for eid, vid in prim_pairs:
+            if len(fill_pairs) >= len(fill_pos):
+                break
+            if abs(eid) not in copied:
+                fill_pairs.append((eid, vid))
+                copied.add(abs(eid))
+
+        for (pos, (eid, vid)) in zip(fill_pos, fill_pairs):
+            out_seq[pos] = eid
+            out_asg[pos] = vid
+
+        # Safety: nếu còn None (không kỳ vọng), giữ lại gene của primary
+        for idx in range(Lp):
+            if out_seq[idx] is None:
+                out_seq[idx] = primary.service_sequence[idx]
+            if out_asg[idx] is None:
+                out_asg[idx] = primary.vehicle_assignment[idx]
+
+        return Chromosome(out_seq, out_asg)
+
+    @staticmethod
+    def _variable_length_pmx(primary: Chromosome, secondary: Chromosome) -> Chromosome:
+        """Biến thể PMX cho 2 segment lệch độ dài.
+
+        Ý tưởng:
+        - Copy đoạn [i:j] từ primary
+        - Tạo mapping theo vị trí giữa segment của primary và secondary:
+            map[p_abs[k]] = s_abs[k] nếu k < len(secondary)
+          Nếu k vượt index của secondary -> coi như invalid.
+        - Với vị trí ngoài segment: lấy candidate từ secondary nếu có (k < Ls),
+          nếu conflict thì follow chain mapping; nếu chain rơi vào invalid/không có,
+          tạm để None rồi sẽ lấp đầy.
+        - Cuối cùng lấp các None bằng các gene còn thiếu (ưu tiên theo thứ tự của secondary,
+          rồi primary) và gán assignment theo nguồn của gene.
+        """
+        Lp = primary.length
+        if Lp == 0:
+            return Chromosome([], [])
+        if Lp < 2:
+            return primary.clone()
+
+        Ls = secondary.length
+        i, j = sorted(random.sample(range(Lp), 2))
+
+        p_abs = [abs(e) for e in primary.service_sequence]
+        s_abs = [abs(e) for e in secondary.service_sequence]
+
+        out_seq: list[int | None] = [None] * Lp
+        out_asg: list[int | None] = [None] * Lp
+
+        # Quick lookup abs(eid) -> (signed_eid, vid)
+        sec_lookup: dict[int, tuple[int, int]] = {
+            abs(e): (e, v) for e, v in zip(secondary.service_sequence, secondary.vehicle_assignment)
+        }
+        prim_lookup: dict[int, tuple[int, int]] = {
+            abs(e): (e, v) for e, v in zip(primary.service_sequence, primary.vehicle_assignment)
+        }
+
+        # Copy segment from primary
+        out_seq[i:j+1] = primary.service_sequence[i:j+1]
+        out_asg[i:j+1] = primary.vehicle_assignment[i:j+1]
+        in_seg = set(p_abs[i:j+1])
+
+        # Build mapping (primary segment abs -> secondary segment abs) when secondary has that index
+        mapping: dict[int, int] = {}
+        for k in range(i, j + 1):
+            if k < Ls:
+                mapping[p_abs[k]] = s_abs[k]
+
+        def resolve(val_abs: int) -> int | None:
+            """Follow PMX mapping chain; return a non-conflicting abs eid or None if invalid."""
+            seen_chain: set[int] = set()
+            cur = val_abs
+            while cur in in_seg:
+                if cur in seen_chain:
+                    return None
+                seen_chain.add(cur)
+                nxt = mapping.get(cur)
+                if nxt is None:
+                    return None
+                cur = nxt
+            return cur
+
+        # Fill outside segment using secondary candidates when available
+        for k in list(range(0, i)) + list(range(j + 1, Lp)):
+            if k >= Ls:
+                continue  # invalid -> leave None for now
+            cand = s_abs[k]
+            resolved = resolve(cand)
+            if resolved is None:
+                continue
+            signed, vid = sec_lookup.get(resolved) or prim_lookup.get(resolved)  # type: ignore[assignment]
+            out_seq[k] = signed
+            out_asg[k] = vid
+            in_seg.add(resolved)
+
+        # Determine which abs-ids are still missing in this offspring segment
+        used_abs = {abs(e) for e in out_seq if e is not None}
+
+        # Fill remaining slots: prefer secondary order, then primary order
+        candidates: list[int] = []
+        for v in s_abs:
+            if v not in used_abs:
+                candidates.append(v)
+                used_abs.add(v)
+        for v in p_abs:
+            if v not in used_abs:
+                candidates.append(v)
+                used_abs.add(v)
+
+        cand_it = iter(candidates)
+        for idx in range(Lp):
+            if out_seq[idx] is None:
+                v = next(cand_it, None)
+                if v is None:
+                    # Fallback: keep primary gene (should be rare)
+                    out_seq[idx] = primary.service_sequence[idx]
+                    out_asg[idx] = primary.vehicle_assignment[idx]
+                else:
+                    signed, vid = sec_lookup.get(v) or prim_lookup.get(v)  # type: ignore[assignment]
+                    out_seq[idx] = signed
+                    out_asg[idx] = vid
+
+        return Chromosome(out_seq, out_asg)
