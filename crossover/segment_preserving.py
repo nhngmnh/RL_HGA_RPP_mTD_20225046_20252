@@ -31,48 +31,73 @@ class SegmentPreservingCrossover(CrossoverOperator):
         self._pmx    = PMXCrossover()
 
     def cross(self, p1: Chromosome, p2: Chromosome) -> tuple[Chromosome, Chromosome]:
-        # Chọn ngẫu nhiên một truck system
+        # Default behavior: chọn ngẫu nhiên một truck system
         k = random.randint(1, self.fleet.num_trucks)
+        return self.cross_with_system(p1, p2, k)
+
+    def cross_with_system(self, p1: Chromosome, p2: Chromosome, k: int) -> tuple[Chromosome, Chromosome]:
+        """Crossover với truck system k được chỉ định (phục vụ RL action)."""
+        if k < 1 or k > self.fleet.num_trucks:
+            raise ValueError(f"Invalid system k={k}")
+
+        # Áp OX hoặc PMX lên segment (chọn ngẫu nhiên) — dùng CHUNG cho cả hai con
+        sub_op = self._ox if random.random() < 0.5 else self._pmx
+
+        o1 = self._cross_one_with_subop(p1, p2, k, sub_op)
+        o2 = self._cross_one_with_subop(p2, p1, k, sub_op)
+        return o1, o2
+
+    def cross_one(self, primary: Chromosome, secondary: Chromosome, k: int) -> Chromosome:
+        """Tạo 1 offspring base theo primary, phối hợp từ secondary.
+
+        Dùng khi RL coi (primary, secondary) là một quyết định riêng.
+        """
+        if k < 1 or k > self.fleet.num_trucks:
+            raise ValueError(f"Invalid system k={k}")
+
+        sub_op = self._ox if random.random() < 0.5 else self._pmx
+        return self._cross_one_with_subop(primary, secondary, k, sub_op)
+
+    def _cross_one_with_subop(
+        self,
+        primary: Chromosome,
+        secondary: Chromosome,
+        k: int,
+        sub_op: CrossoverOperator,
+    ) -> Chromosome:
         system_vids = self.fleet.system_ids(k)
 
         # Lấy indices thuộc system k trong mỗi parent
-        indices_p1 = p1.segment_of_system(system_vids)
-        indices_p2 = p2.segment_of_system(system_vids)
+        indices_p1 = primary.segment_of_system(system_vids)
+        indices_p2 = secondary.segment_of_system(system_vids)
 
         if not indices_p1 or not indices_p2:
-            # Fallback: không có gì để trao đổi → trả về clone
-            return p1.clone(), p2.clone()
+            # Fallback: không có gì để trao đổi → trả về clone của primary
+            return primary.clone()
 
         # Trích sub-chromosome của segment
-        sub_p1 = self._extract_segment(p1, indices_p1)
-        sub_p2 = self._extract_segment(p2, indices_p2)
-
-        # Áp OX hoặc PMX lên segment (chọn ngẫu nhiên)
-        sub_op = self._ox if random.random() < 0.5 else self._pmx
+        sub_p1 = self._extract_segment(primary, indices_p1)
+        sub_p2 = self._extract_segment(secondary, indices_p2)
 
         # Nếu segment cùng độ dài thì dùng OX/PMX chuẩn.
         # Nếu lệch độ dài, vẫn lai theo biến thể OX/PMX (variable-length):
         # mapping vượt index -> gán "invalid" (None) rồi lấp đầy.
         if sub_p1.length == sub_p2.length and sub_p1.length >= 2:
-            sub_o1, sub_o2 = sub_op.cross(sub_p1, sub_p2)
+            sub_o1, _ = sub_op.cross(sub_p1, sub_p2)  # lấy offspring base theo primary
         else:
             if isinstance(sub_op, OXCrossover):
                 sub_o1 = self._variable_length_ox(sub_p1, sub_p2)
-                sub_o2 = self._variable_length_ox(sub_p2, sub_p1)
             else:
                 sub_o1 = self._variable_length_pmx(sub_p1, sub_p2)
-                sub_o2 = self._variable_length_pmx(sub_p2, sub_p1)
 
-        # Reintegrate vào bản sao của parent
-        o1 = self._reintegrate(p1, indices_p1, sub_o1)
-        o2 = self._reintegrate(p2, indices_p2, sub_o2)
+        # Reintegrate vào bản sao của primary
+        o1 = self._reintegrate(primary, indices_p1, sub_o1)
 
         # Repair duplicate / missing
-        all_eids = [abs(e) for e in p1.service_sequence]
+        all_eids = [abs(e) for e in primary.service_sequence]
         o1 = self._repair_chromosome(o1, all_eids)
-        o2 = self._repair_chromosome(o2, all_eids)
 
-        return o1, o2
+        return o1
 
     # ------------------------------------------------------------------
     # Helpers

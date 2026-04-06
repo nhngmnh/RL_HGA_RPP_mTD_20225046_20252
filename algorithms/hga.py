@@ -13,6 +13,10 @@ from local_search import (
 )
 from evaluation import Decoder, FitnessEvaluator, DiversityCalculator, Population
 
+from configs.qlearning_params import get_qlearning_config
+from qlearning import QLearningAgent, build_spc_state
+from qlearning.q_agent import QLearningConfig
+
 
 class HGA:
     """
@@ -86,12 +90,19 @@ class HGA:
         self.best_history:    list[float] = []
         self.current_pm = params.pm
 
+        # --- Q-learning (RL-guided SPC) ---
+        qcfg = QLearningConfig.from_dict(get_qlearning_config())
+        self.q_agent = QLearningAgent(num_actions=fleet.num_trucks, config=qcfg, seed=params.seed)
+        self._q_transitions: list[tuple[object, int, float, Individual]] = []
+
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
 
     def run(self, verbose: bool = True) -> Individual:
         t0 = time.time()
+
+        self.q_agent.start_episode()
 
         # Step 1: khởi tạo population
         initial_pop = self.initializer.create_population()
@@ -112,6 +123,12 @@ class HGA:
 
             # Evaluate offspring trước (để local search chỉ dùng makespan đã có sẵn)
             self.evaluator.evaluate_many(offspring)
+
+            # Q-learning update: reward = giảm makespan so với parent p1
+            for state, action, p_primary_ms, child_ind in self._q_transitions:
+                reward = p_primary_ms - child_ind.makespan
+                self.q_agent.update(state, action, reward, done=True)
+            self._q_transitions.clear()
 
             # Local search trên top ls_top_ratio offspring
             offspring = self._local_search(offspring)
@@ -166,17 +183,40 @@ class HGA:
 
             # Crossover
             cx = random.choice(self.crossovers)
-            c1, c2 = cx.cross(p1.chromosome, p2.chromosome)
+            if isinstance(cx, SegmentPreservingCrossover):
+                state1 = build_spc_state(
+                    p1.chromosome, p2.chromosome, self.fleet, self.decoder, w_inf=self.evaluator.w_inf
+                )
+                action_k1 = self.q_agent.select_action(state1)
+                c1 = cx.cross_one(p1.chromosome, p2.chromosome, action_k1)
+
+                c2 = None
+                if len(offspring) + 1 < target:
+                    state2 = build_spc_state(
+                        p2.chromosome, p1.chromosome, self.fleet, self.decoder, w_inf=self.evaluator.w_inf
+                    )
+                    action_k2 = self.q_agent.select_action(state2)
+                    c2 = cx.cross_one(p2.chromosome, p1.chromosome, action_k2)
+            else:
+                c1, c2 = cx.cross(p1.chromosome, p2.chromosome)
 
             # Mutation
             if random.random() < self.current_pm:
                 c1 = random.choice(self.mutations).mutate(c1)
-            if random.random() < self.current_pm:
+            if c2 is not None and random.random() < self.current_pm:
                 c2 = random.choice(self.mutations).mutate(c2)
 
-            offspring.append(Individual(c1))
-            if len(offspring) < target:
-                offspring.append(Individual(c2))
+            ind1 = Individual(c1)
+            offspring.append(ind1)
+
+            if isinstance(cx, SegmentPreservingCrossover):
+                self._q_transitions.append((state1, action_k1, p1.makespan, ind1))
+
+            if c2 is not None and len(offspring) < target:
+                ind2 = Individual(c2)
+                offspring.append(ind2)
+                if isinstance(cx, SegmentPreservingCrossover):
+                    self._q_transitions.append((state2, action_k2, p2.makespan, ind2))
 
         return offspring
 
