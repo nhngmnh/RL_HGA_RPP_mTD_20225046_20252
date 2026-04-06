@@ -76,7 +76,7 @@ def main():
 
         append_result(
             results_path,
-            algorithm="RL_SPC_HGA",
+            algorithm="HGA",
             datasetname=inst.name,
             num_trucks=fleet.num_trucks,
             drones_per_truck=fleet.drones_per_truck,

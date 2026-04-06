@@ -38,7 +38,7 @@ def build_spc_state(
     """Build SPC state as tuple((rank_idx_k, rank_time_k) for k=1..K).
 
     Definitions (p1 is base):
-      - idx distance for system k: |A_k \ B_k| where A_k/B_k are index sets
+            - idx distance for system k: |(A_k \ B_k) ∪ (B_k \ A_k)| (symmetric difference)
       - time distance for system k: |T_k(p1) - T_k(p2)| where T_k is system finish_time
     """
     K = fleet.num_trucks
@@ -49,7 +49,7 @@ def build_spc_state(
         sys_vids = fleet.system_ids(k)
         A = set(p1.segment_of_system(sys_vids))
         B = set(p2.segment_of_system(sys_vids))
-        idx_dists.append(float(len(A - B)))
+        idx_dists.append(float(len(A ^ B)))
 
     # Time distances
     sol1 = decoder.decode(p1, w_inf=w_inf)
