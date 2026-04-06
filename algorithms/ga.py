@@ -93,7 +93,8 @@ class GA:
         # --- Q-learning (RL-guided SPC) ---
         qcfg = QLearningConfig.from_dict(get_qlearning_config())
         self.q_agent = QLearningAgent(num_actions=fleet.num_trucks, config=qcfg, seed=params.seed)
-        self._q_transitions: list[tuple[object, int, float, Individual]] = []
+        # Stored as: (state, action_k, primary_chromosome, child_individual)
+        self._q_transitions: list[tuple[object, int, Chromosome, Individual]] = []
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -124,10 +125,22 @@ class GA:
             # Evaluate offspring trước (để local search chỉ dùng makespan đã có sẵn)
             self.evaluator.evaluate_many(offspring)
 
-            # Q-learning update: reward = giảm makespan so với parent p1
-            for state, action, p_primary_ms, child_ind in self._q_transitions:
-                reward = p_primary_ms - child_ind.makespan
-                self.q_agent.update(state, action, reward, done=True)
+            # Q-learning update (per-system): reward = max(0, T_primary(k) - T_child(k))
+            # where k is the selected truck system (action).
+            ft_cache: dict[int, list[float]] = {}
+
+            def _finish_times(chrom: Chromosome) -> list[float]:
+                key = id(chrom)
+                if key not in ft_cache:
+                    sol = self.decoder.decode(chrom, w_inf=self.evaluator.w_inf)
+                    ft_cache[key] = [r.finish_time for r in sol.truck_routes]
+                return ft_cache[key]
+
+            for state, action_k, primary_chrom, child_ind in self._q_transitions:
+                t_primary = _finish_times(primary_chrom)[action_k - 1]
+                t_child = _finish_times(child_ind.chromosome)[action_k - 1]
+                reward = max(0.0, t_primary - t_child)
+                self.q_agent.update(state, action_k, reward, done=True)
             self._q_transitions.clear()
 
             # Cập nhật population
@@ -161,6 +174,12 @@ class GA:
                 print(f"Gen {gen:3d} | best={self.best_individual.makespan:.4f} "
                       f"| pm={self.current_pm:.2f} | winf={self.evaluator.w_inf:.2f} "
                       f"| {elapsed:.1f}s")
+
+        if verbose:
+            print(
+                f"Q-learning | epsilon_final={self.q_agent.epsilon:.6f} "
+                f"| total_steps={self.q_agent.total_steps}"
+            )
 
         return self.best_individual
 
@@ -209,13 +228,13 @@ class GA:
             offspring.append(ind1)
 
             if isinstance(cx, SegmentPreservingCrossover):
-                self._q_transitions.append((state1, action_k1, p1.makespan, ind1))
+                self._q_transitions.append((state1, action_k1, p1.chromosome, ind1))
 
             if c2 is not None and len(offspring) < target:
                 ind2 = Individual(c2)
                 offspring.append(ind2)
                 if isinstance(cx, SegmentPreservingCrossover):
-                    self._q_transitions.append((state2, action_k2, p2.makespan, ind2))
+                    self._q_transitions.append((state2, action_k2, p2.chromosome, ind2))
 
         return offspring
 

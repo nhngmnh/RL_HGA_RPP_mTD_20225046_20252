@@ -34,7 +34,7 @@ def main():
     ga_params = get_ga_params()
 
     # --- Batch run: N10E30R10_01.txt .. N10E30R10_05.txt ---
-    for idx in range(1, 6):
+    for idx in range(5, 6):
         instance_filename = f"N20E50R20_{idx:02d}.txt"
         instance_path = os.path.join(
             os.path.dirname(__file__),
