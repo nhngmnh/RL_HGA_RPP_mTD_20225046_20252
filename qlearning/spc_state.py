@@ -38,7 +38,8 @@ def build_spc_state(
     """Build SPC state as tuple((rank_idx_k, rank_time_k) for k=1..K).
 
     Definitions (p1 is base):
-            - idx distance for system k: |(A_k \ B_k) ∪ (B_k \ A_k)| (symmetric difference)
+                        - idx distance for system k: |(A_k \ B_k) ∪ (B_k \ A_k)| (symmetric difference)
+                            where A_k/B_k are sets of *absolute* edge-ids served by system k
       - time distance for system k: |T_k(p1) - T_k(p2)| where T_k is system finish_time
     """
     K = fleet.num_trucks
@@ -47,8 +48,13 @@ def build_spc_state(
     idx_dists: list[float] = []
     for k in range(1, K + 1):
         sys_vids = fleet.system_ids(k)
-        A = set(p1.segment_of_system(sys_vids))
-        B = set(p2.segment_of_system(sys_vids))
+        seg1 = p1.segment_of_system(sys_vids)
+        seg2 = p2.segment_of_system(sys_vids)
+
+        # service_sequence stores signed edge-ids (+eid/-eid) to encode traversal direction.
+        # For distance comparisons we ignore direction, so use abs(edge-id).
+        A = {abs(p1.service_sequence[i]) for i in seg1}
+        B = {abs(p2.service_sequence[i]) for i in seg2}
         idx_dists.append(float(len(A ^ B)))
 
     # Time distances

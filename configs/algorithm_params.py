@@ -31,7 +31,7 @@ def get_ga_params() -> HGAParams:
         # Keep the same defaults as HGA unless you want to tune further.
         PL=100,
         PH=200,
-        G=1000,
+        G=500,
         Gm=10,
         pt=0.1,
         pm=0.1,

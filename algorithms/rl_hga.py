@@ -109,36 +109,31 @@ class RLHGA:
             # Evaluate offspring
             self.evaluator.evaluate_many(offspring)
 
-            # Q-learning update (per-system, 1 decision per pair)
-            ft_cache: dict[int, list[float]] = {}
-
-            def _finish_times(chrom: Chromosome) -> list[float]:
-                key = id(chrom)
-                if key not in ft_cache:
-                    sol = self.decoder.decode(chrom, w_inf=self.evaluator.w_inf)
-                    ft_cache[key] = [r.finish_time for r in sol.truck_routes]
-                return ft_cache[key]
-
-            for state, action_k, p1_chrom, p2_chrom, c1_ind, c2_ind in self._q_transitions:
-                t_p1 = _finish_times(p1_chrom)[action_k - 1]
-                t_p2 = _finish_times(p2_chrom)[action_k - 1]
-                best_parent_t = min(t_p1, t_p2)
-
-                t_c1 = _finish_times(c1_ind.chromosome)[action_k - 1]
-                best_child_t = t_c1
-                if c2_ind is not None:
-                    t_c2 = _finish_times(c2_ind.chromosome)[action_k - 1]
-                    best_child_t = min(best_child_t, t_c2)
-
-                reward = max(0.0, best_parent_t - best_child_t)
-                self.q_agent.update(state, action_k, reward, done=True)
-            self._q_transitions.clear()
-
             # Local search
-            offspring = self._local_search(offspring)
+            offspring, ls_map = self._local_search_with_map(offspring)
+
+            # If local search replaced Individuals, ensure transitions point to the updated objects.
+            updated_transitions: list[
+                tuple[object, int, Chromosome, Chromosome, Individual, Individual | None]
+            ] = []
+            for state, action_k, p1_chrom, p2_chrom, c1_ind, c2_ind in self._q_transitions:
+                c1_new = ls_map.get(id(c1_ind), c1_ind)
+                c2_new = None if c2_ind is None else ls_map.get(id(c2_ind), c2_ind)
+                updated_transitions.append((state, action_k, p1_chrom, p2_chrom, c1_new, c2_new))
+            self._q_transitions = updated_transitions
 
             # Update population
             self.pop.update(offspring, already_evaluated=True)
+
+            # Q-learning update (binary makespan reward, computed after survivor selection)
+            worst_survivor = max(ind.makespan for ind in self.pop.individuals)
+            for state, action_k, _p1, _p2, c1_ind, c2_ind in self._q_transitions:
+                best_child = c1_ind.makespan
+                if c2_ind is not None:
+                    best_child = min(best_child, c2_ind.makespan)
+                reward = 1.0 if best_child < worst_survivor else 0.0
+                self.q_agent.update(state, action_k, reward, done=True)
+            self._q_transitions.clear()
 
             # Update best
             current_best = self.pop.best()
@@ -216,7 +211,9 @@ class RLHGA:
 
         return offspring
 
-    def _local_search(self, offspring: list[Individual]) -> list[Individual]:
+    def _local_search_with_map(
+        self, offspring: list[Individual]
+    ) -> tuple[list[Individual], dict[int, Individual]]:
         if any(ind.makespan == math.inf for ind in offspring):
             raise ValueError(
                 "Offspring must be evaluated before local search. "
@@ -229,6 +226,7 @@ class RLHGA:
         rest = offspring[n_ls:]
 
         improved: list[Individual] = []
+        ls_map: dict[int, Individual] = {}
         for ind in to_improve:
             current = ind
             for _ in range(self.params.ls_steps):
@@ -237,8 +235,12 @@ class RLHGA:
                 if result is not None:
                     current = result
             improved.append(current)
+            ls_map[id(ind)] = current
 
-        return improved + rest
+        for ind in rest:
+            ls_map[id(ind)] = ind
+
+        return improved + rest, ls_map
 
     @staticmethod
     def _tournament(pop_sorted: list[Individual]) -> Individual:
