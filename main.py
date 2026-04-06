@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from algorithms.ga import GA
 from algorithms.hga import HGA
+from algorithms.rl_hga import RLHGA
 from configs.algorithm_params import get_ga_params, get_hga_params
 from configs.fleet_params import get_fleet_config
 from utils.dataset_loader import load_urpp_like_instance
@@ -25,7 +26,7 @@ from utils.results_csv import append_result
 
 def main():
     print("=" * 55)
-    print("  RPP-mTD — GA/HGA Runner")
+    print("  RPP-mTD — HGA vs RLHGA Runner")
     print("=" * 55)
 
     results_path = os.path.join(os.path.dirname(__file__), "results.csv")
@@ -33,8 +34,8 @@ def main():
     hga_params = get_hga_params()
     ga_params = get_ga_params()
 
-    # --- Batch run: N10E30R10_01.txt .. N10E30R10_05.txt ---
-    for idx in range(5, 6):
+    # --- Batch run: N20E50R20_01.txt .. N20E50R20_05.txt ---
+    for idx in range(1, 6):
         instance_filename = f"N20E50R20_{idx:02d}.txt"
         instance_path = os.path.join(
             os.path.dirname(__file__),
@@ -61,22 +62,79 @@ def main():
         print(f"Fleet: {fleet.num_trucks} trucks × {fleet.drones_per_truck} drones")
         print(f"Vehicle IDs: {fleet.all_vehicle_ids()}")
 
-        # --- Run HGA ---
-        print(f"\nRunning HGA: {hga_params.G} generations, PL={hga_params.PL}...\n")
-        hga = HGA(fleet, hga_params, required_ids, truck_dist, drone_dist, edge_info, truck_path)
-        t0 = time.perf_counter()
-        best = hga.run(verbose=True)
-        runtime_s = time.perf_counter() - t0
+        # # --- Run HGA (pure) ---
+        # print(f"\nRunning HGA: {hga_params.G} generations, PL={hga_params.PL}...\n")
+        # hga = HGA(fleet, hga_params, required_ids, truck_dist, drone_dist, edge_info, truck_path)
+        # t0 = time.perf_counter()
+        # best_hga = hga.run(verbose=True)
+        # runtime_hga_s = time.perf_counter() - t0
+
+        # print("\n" + "=" * 55)
+        # print("  Algorithm     : HGA")
+        # print(f"  Best makespan : {best_hga.makespan:.4f} hours")
+        # print(f"  Fitness       : {best_hga.fitness:.4f}")
+        # print("=" * 55)
+
+        # append_result(
+        #     results_path,
+        #     algorithm="HGA",
+        #     datasetname=inst.name,
+        #     num_trucks=fleet.num_trucks,
+        #     drones_per_truck=fleet.drones_per_truck,
+        #     makespan_hours=best_hga.makespan,
+        #     fitness=best_hga.fitness,
+        #     runtime_seconds=runtime_hga_s,
+        #     service_seq=best_hga.chromosome.service_sequence,
+        #     vehicle_asgn=best_hga.chromosome.vehicle_assignment,
+        # )
+
+        # # --- Run RLHGA ---
+        # print(f"\nRunning RLHGA: {hga_params.G} generations, PL={hga_params.PL}...\n")
+        # rlhga = RLHGA(fleet, hga_params, required_ids, truck_dist, drone_dist, edge_info, truck_path)
+        # t1 = time.perf_counter()
+        # best_rl = rlhga.run(verbose=True)
+        # runtime_rl_s = time.perf_counter() - t1
+
+        # print("\n" + "=" * 55)
+        # print("  Algorithm     : RLHGA")
+        # print(f"  Best makespan : {best_rl.makespan:.4f} hours")
+        # print(f"  Fitness       : {best_rl.fitness:.4f}")
+        # print("=" * 55)
+
+        # print("\n" + "-" * 55)
+        # print(f"Compare (RLHGA - HGA) makespan: {best_rl.makespan - best_hga.makespan:+.4f} hours")
+        # print(f"Compare (RLHGA - HGA) runtime : {runtime_rl_s - runtime_hga_s:+.2f} s")
+        # print("-" * 55)
+
+        # append_result(
+        #     results_path,
+        #     algorithm="RLHGA",
+        #     datasetname=inst.name,
+        #     num_trucks=fleet.num_trucks,
+        #     drones_per_truck=fleet.drones_per_truck,
+        #     makespan_hours=best_rl.makespan,
+        #     fitness=best_rl.fitness,
+        #     runtime_seconds=runtime_rl_s,
+        #     service_seq=best_rl.chromosome.service_sequence,
+        #     vehicle_asgn=best_rl.chromosome.vehicle_assignment,
+        # )
+
+        # --- Run GA ---
+        print(f"\nRunning RL_GA: {ga_params.G} generations, PL={ga_params.PL}...\n")
+        ga = GA(fleet, ga_params, required_ids, truck_dist, drone_dist, edge_info, truck_path)
+        t1 = time.perf_counter()
+        best = ga.run(verbose=True)
+        runtime_s = time.perf_counter() - t1
 
         print("\n" + "=" * 55)
-        print(f"  Algorithm     : HGA")
+        print(f"  Algorithm     : GA")
         print(f"  Best makespan : {best.makespan:.4f} hours")
         print(f"  Fitness       : {best.fitness:.4f}")
         print("=" * 55)
 
         append_result(
             results_path,
-            algorithm="HGA",
+            algorithm="RL_SPC_GA",
             datasetname=inst.name,
             num_trucks=fleet.num_trucks,
             drones_per_truck=fleet.drones_per_truck,
@@ -86,32 +144,6 @@ def main():
             service_seq=best.chromosome.service_sequence,
             vehicle_asgn=best.chromosome.vehicle_assignment,
         )
-
-        # # --- Run GA ---
-        # print(f"\nRunning RL_GA: {ga_params.G} generations, PL={ga_params.PL}...\n")
-        # ga = GA(fleet, ga_params, required_ids, truck_dist, drone_dist, edge_info, truck_path)
-        # t1 = time.perf_counter()
-        # best = ga.run(verbose=True)
-        # runtime_s = time.perf_counter() - t1
-
-        # print("\n" + "=" * 55)
-        # print(f"  Algorithm     : GA")
-        # print(f"  Best makespan : {best.makespan:.4f} hours")
-        # print(f"  Fitness       : {best.fitness:.4f}")
-        # print("=" * 55)
-
-        # append_result(
-        #     results_path,
-        #     algorithm="RL_SPC_GA",
-        #     datasetname=inst.name,
-        #     num_trucks=fleet.num_trucks,
-        #     drones_per_truck=fleet.drones_per_truck,
-        #     makespan_hours=best.makespan,
-        #     fitness=best.fitness,
-        #     runtime_seconds=runtime_s,
-        #     service_seq=best.chromosome.service_sequence,
-        #     vehicle_asgn=best.chromosome.vehicle_assignment,
-        # )
 
 
 if __name__ == "__main__":
