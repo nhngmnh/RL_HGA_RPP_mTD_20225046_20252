@@ -13,9 +13,7 @@ from local_search import (
 )
 from evaluation import Decoder, FitnessEvaluator, DiversityCalculator, Population
 
-from configs.qlearning_params import get_qlearning_config
-from qlearning import QLearningAgent, build_spc_state
-from qlearning.q_agent import QLearningConfig
+
 
 
 class RLGA:
@@ -80,18 +78,8 @@ class RLGA:
         self.best_history: list[float] = []
         self.current_pm = params.pm
 
-        # --- Q-learning (RL-guided SPC) ---
-        qcfg = QLearningConfig.from_dict(get_qlearning_config())
-        self.q_agent = QLearningAgent(num_actions=fleet.num_trucks, config=qcfg, seed=params.seed)
-        # Stored as: (state, action_k, p1_chrom, p2_chrom, child1, child2_or_None)
-        self._q_transitions: list[
-            tuple[object, int, Chromosome, Chromosome, Individual, Individual | None]
-        ] = []
-
     def run(self, verbose: bool = True) -> Individual:
         t0 = time.time()
-
-        self.q_agent.start_episode()
 
         initial_pop = self.initializer.create_population()
         self.pop.initialize(initial_pop)
@@ -109,19 +97,8 @@ class RLGA:
             # Evaluate offspring
             self.evaluator.evaluate_many(offspring)
 
-            # Update population (selection/trim happens here)
+            # Update population
             self.pop.update(offspring, already_evaluated=True)
-
-            # Q-learning update (binary makespan reward, computed after survivor selection)
-            # reward = 1 if best child (of the 2) is better than the worst survivor; else 0.
-            worst_survivor = max(ind.makespan for ind in self.pop.individuals)
-            for state, action_k, _p1, _p2, c1_ind, c2_ind in self._q_transitions:
-                best_child = c1_ind.makespan
-                if c2_ind is not None:
-                    best_child = min(best_child, c2_ind.makespan)
-                reward = 1.0 if best_child < worst_survivor else 0.0
-                self.q_agent.update(state, action_k, reward, done=True)
-            self._q_transitions.clear()
 
             # Update best
             current_best = self.pop.best()
@@ -154,12 +131,6 @@ class RLGA:
                     f"| {elapsed:.1f}s"
                 )
 
-        if verbose:
-            print(
-                f"Q-learning | epsilon_final={self.q_agent.epsilon:.6f} "
-                f"| total_steps={self.q_agent.total_steps}"
-            )
-
         return self.best_individual
 
     def _generate_offspring(self) -> list[Individual]:
@@ -172,14 +143,9 @@ class RLGA:
             p2 = self._tournament(pop_sorted)
 
             cx = random.choice(self.crossovers)
-            if isinstance(cx, SegmentPreservingCrossover):
-                state = build_spc_state(
-                    p1.chromosome, p2.chromosome, self.fleet, self.decoder, w_inf=self.evaluator.w_inf
-                )
-                action_k = self.q_agent.select_action(state)
-                c1, c2 = cx.cross_with_system(p1.chromosome, p2.chromosome, action_k)
-            else:
-                c1, c2 = cx.cross(p1.chromosome, p2.chromosome)
+            # Crossover behavior is the same as the original GA:
+            # choose an operator at random and call cross(); SPC will randomize system k internally.
+            c1, c2 = cx.cross(p1.chromosome, p2.chromosome)
 
             if random.random() < self.current_pm:
                 c1 = random.choice(self.mutations).mutate(c1)
@@ -193,9 +159,6 @@ class RLGA:
             if c2 is not None and len(offspring) < target:
                 ind2 = Individual(c2)
                 offspring.append(ind2)
-
-            if isinstance(cx, SegmentPreservingCrossover):
-                self._q_transitions.append((state, action_k, p1.chromosome, p2.chromosome, ind1, ind2))
 
         return offspring
 

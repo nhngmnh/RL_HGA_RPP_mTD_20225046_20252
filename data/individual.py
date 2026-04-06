@@ -14,13 +14,15 @@ class Individual:
         diversity:   normalized Hamming distance tới 2 nearest neighbors
     """
 
-    __slots__ = ("chromosome", "makespan", "fitness", "diversity")
+    __slots__ = ("chromosome", "makespan", "fitness", "diversity", "system_finish_times")
 
     def __init__(self, chromosome: Chromosome):
         self.chromosome = chromosome
         self.makespan:  float = math.inf
         self.fitness:   float = math.inf
         self.diversity: float = 0.0
+        # Cached per-system finish times from the last evaluation (k=1..K).
+        self.system_finish_times: list[float] = []
 
     # ------------------------------------------------------------------
     # Fitness update (gọi sau khi có makespan và diversity)
@@ -56,6 +58,7 @@ class Individual:
         ind.makespan  = self.makespan
         ind.fitness   = self.fitness
         ind.diversity = self.diversity
+        ind.system_finish_times = self.system_finish_times[:]
         return ind
 
     # ------------------------------------------------------------------

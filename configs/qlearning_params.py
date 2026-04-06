@@ -3,13 +3,13 @@ from __future__ import annotations
 # Q-learning configuration for RL-guided Segment-Preserving Crossover (SPC).
 
 QLEARNING_CONFIG = {
-    "alpha": 0.2,           # Learning rate
+    "alpha": 0.1,           # Learning rate
     "gamma": 0.00,           # Discount factor (0.0 = contextual bandit / one-step)
     "epsilon": 1.00,         # Initial exploration rate
     "min_eps": 0.01,         # Minimum exploration rate
-    "eps_decay": 0.997,      # Epsilon decay rate (applied per update step)
+    "eps_decay": 0.99992,      # Epsilon decay rate (applied per update step)
     "episodes": 1,           # Number of training episodes (interpreted as GA/HGA runs)
-    "max_steps": 20000,    # Maximum Q-updates with exploration before greedy-only
+    "max_steps": 60000,    # Maximum Q-updates with exploration before greedy-only
     "greedy_steps": 0,       # Optional greedy-only evaluation steps after max_steps
 }
 

@@ -21,6 +21,7 @@ class FitnessEvaluator:
     def evaluate(self, ind: Individual) -> Individual:
         sol = self.decoder.decode(ind.chromosome, w_inf=self.w_inf)
         ind.makespan = sol.makespan + self.w_inf * sol.total_violation
+        ind.system_finish_times = [r.finish_time for r in sol.truck_routes]
         return ind
 
     def evaluate_many(self, individuals: list[Individual]) -> list[Individual]:

@@ -14,7 +14,7 @@ from local_search import (
 from evaluation import Decoder, FitnessEvaluator, DiversityCalculator, Population
 
 from configs.qlearning_params import get_qlearning_config
-from qlearning import QLearningAgent, build_spc_state
+from qlearning import QLearningAgent, build_ls_state
 from qlearning.q_agent import QLearningConfig
 
 
@@ -80,18 +80,14 @@ class RLHGA:
         self.best_history: list[float] = []
         self.current_pm = params.pm
 
-        # --- Q-learning (RL-guided SPC) ---
         qcfg = QLearningConfig.from_dict(get_qlearning_config())
-        self.q_agent = QLearningAgent(num_actions=fleet.num_trucks, config=qcfg, seed=params.seed)
-        # Stored as: (state, action_k, p1_chrom, p2_chrom, child1, child2_or_None)
-        self._q_transitions: list[
-            tuple[object, int, Chromosome, Chromosome, Individual, Individual | None]
-        ] = []
+        # --- Q-learning (RL-guided local search) ---
+        # Actions (5): SubsequenceReversal, OrOpt, DroneSortieOptimizer, GreedyVehicleReassignment, RuinAndReconstruct
+        self.ls_agent = QLearningAgent(num_actions=5, config=qcfg, seed=params.seed)
 
     def run(self, verbose: bool = True) -> Individual:
         t0 = time.time()
-
-        self.q_agent.start_episode()
+        self.ls_agent.start_episode()
 
         initial_pop = self.initializer.create_population()
         self.pop.initialize(initial_pop)
@@ -110,30 +106,10 @@ class RLHGA:
             self.evaluator.evaluate_many(offspring)
 
             # Local search
-            offspring, ls_map = self._local_search_with_map(offspring)
-
-            # If local search replaced Individuals, ensure transitions point to the updated objects.
-            updated_transitions: list[
-                tuple[object, int, Chromosome, Chromosome, Individual, Individual | None]
-            ] = []
-            for state, action_k, p1_chrom, p2_chrom, c1_ind, c2_ind in self._q_transitions:
-                c1_new = ls_map.get(id(c1_ind), c1_ind)
-                c2_new = None if c2_ind is None else ls_map.get(id(c2_ind), c2_ind)
-                updated_transitions.append((state, action_k, p1_chrom, p2_chrom, c1_new, c2_new))
-            self._q_transitions = updated_transitions
+            offspring, ls_map = self._local_search_with_map(offspring, gen)
 
             # Update population
             self.pop.update(offspring, already_evaluated=True)
-
-            # Q-learning update (binary makespan reward, computed after survivor selection)
-            worst_survivor = max(ind.makespan for ind in self.pop.individuals)
-            for state, action_k, _p1, _p2, c1_ind, c2_ind in self._q_transitions:
-                best_child = c1_ind.makespan
-                if c2_ind is not None:
-                    best_child = min(best_child, c2_ind.makespan)
-                reward = 1.0 if best_child < worst_survivor else 0.0
-                self.q_agent.update(state, action_k, reward, done=True)
-            self._q_transitions.clear()
 
             # Update best
             current_best = self.pop.best()
@@ -168,8 +144,8 @@ class RLHGA:
 
         if verbose:
             print(
-                f"Q-learning | epsilon_final={self.q_agent.epsilon:.6f} "
-                f"| total_steps={self.q_agent.total_steps}"
+                f"Q-learning (local-search) | epsilon_final={self.ls_agent.epsilon:.6f} "
+                f"| total_steps={self.ls_agent.total_steps}"
             )
 
         return self.best_individual
@@ -184,14 +160,9 @@ class RLHGA:
             p2 = self._tournament(pop_sorted)
 
             cx = random.choice(self.crossovers)
-            if isinstance(cx, SegmentPreservingCrossover):
-                state = build_spc_state(
-                    p1.chromosome, p2.chromosome, self.fleet, self.decoder, w_inf=self.evaluator.w_inf
-                )
-                action_k = self.q_agent.select_action(state)
-                c1, c2 = cx.cross_with_system(p1.chromosome, p2.chromosome, action_k)
-            else:
-                c1, c2 = cx.cross(p1.chromosome, p2.chromosome)
+            # Crossover behavior is the same as the original HGA:
+            # choose an operator at random and call cross(); SPC will randomize system k internally.
+            c1, c2 = cx.cross(p1.chromosome, p2.chromosome)
 
             if random.random() < self.current_pm:
                 c1 = random.choice(self.mutations).mutate(c1)
@@ -206,13 +177,11 @@ class RLHGA:
                 ind2 = Individual(c2)
                 offspring.append(ind2)
 
-            if isinstance(cx, SegmentPreservingCrossover):
-                self._q_transitions.append((state, action_k, p1.chromosome, p2.chromosome, ind1, ind2))
-
         return offspring
 
     def _local_search_with_map(
         self, offspring: list[Individual]
+        , gen: int
     ) -> tuple[list[Individual], dict[int, Individual]]:
         if any(ind.makespan == math.inf for ind in offspring):
             raise ValueError(
@@ -230,10 +199,33 @@ class RLHGA:
         for ind in to_improve:
             current = ind
             for _ in range(self.params.ls_steps):
-                op = random.choice(self.ls_ops)
+                # RL chooses one of 5 LS actions
+                state = build_ls_state(
+                    current.chromosome,
+                    self.fleet,
+                    self.decoder,
+                    gen=gen,
+                    total_gens=self.params.G,
+                    sortie_min_len=self.params.sortie_min_len,
+                    system_finish_times=current.system_finish_times,
+                    w_inf=self.evaluator.w_inf,
+                )
+
+                # If no drone is actionable, skip DroneSortieOptimizer action.
+                # Actions are 1-based: 1=SubsequenceReversal, 2=OrOpt, 3=DroneSortieOptimizer, 4=GreedyVehicleReassignment, 5=RuinAndReconstruct
+                drone_actionable_count = state[1]
+                valid_actions = [1, 2, 4, 5] if drone_actionable_count == 0 else [1, 2, 3, 4, 5]
+                a = self.ls_agent.select_action(state, valid_actions=valid_actions)
+                op = self.ls_ops[a - 1]
+
+                before = current.makespan
                 result = op.improve(current, self.evaluator)
-                if result is not None:
-                    current = result
+                after_ind = result if result is not None else current
+
+                reward = max(0.0, before - after_ind.makespan)
+                self.ls_agent.update(state, a, reward, done=True)
+
+                current = after_ind
             improved.append(current)
             ls_map[id(ind)] = current
 
