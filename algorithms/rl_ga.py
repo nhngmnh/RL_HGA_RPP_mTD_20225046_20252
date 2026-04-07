@@ -91,6 +91,8 @@ class RLGA:
         no_improve_count = 0
 
         for gen in range(1, self.params.G + 1):
+            # Per-generation decode cache
+            self.evaluator.reset_cache()
             # Offspring
             offspring = self._generate_offspring()
 
