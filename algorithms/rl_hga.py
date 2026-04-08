@@ -97,8 +97,13 @@ class RLHGA:
             print(f"Gen   0 | best={self.best_individual.makespan:.4f} | pop={self.pop.size()}")
 
         no_improve_count = 0
+        # Gate RuinAndReconstruct (action=5): enable by default for generation 1
+        # (no previous generation to compare), then enable it only if the *previous*
+        # generation did not improve the best makespan.
+        allow_ruin = True
 
         for gen in range(1, self.params.G + 1):
+            prev_best_makespan = self.best_individual.makespan
             # Offspring
             offspring = self._generate_offspring()
 
@@ -106,7 +111,7 @@ class RLHGA:
             self.evaluator.evaluate_many(offspring)
 
             # Local search
-            offspring, ls_map = self._local_search_with_map(offspring, gen)
+            offspring, ls_map = self._local_search_with_map(offspring, gen, allow_ruin=allow_ruin)
 
             # Update population
             self.pop.update(offspring, already_evaluated=True)
@@ -118,6 +123,9 @@ class RLHGA:
                 no_improve_count = 0
             else:
                 no_improve_count += 1
+
+            improved_this_gen = self.best_individual.makespan < prev_best_makespan
+            allow_ruin = not improved_this_gen
 
             self.best_history.append(self.best_individual.makespan)
 
@@ -182,6 +190,7 @@ class RLHGA:
     def _local_search_with_map(
         self, offspring: list[Individual]
         , gen: int
+        , *, allow_ruin: bool
     ) -> tuple[list[Individual], dict[int, Individual]]:
         if any(ind.makespan == math.inf for ind in offspring):
             raise ValueError(
@@ -214,7 +223,13 @@ class RLHGA:
                 # If no drone is actionable, skip DroneSortieOptimizer action.
                 # Actions are 1-based: 1=SubsequenceReversal, 2=OrOpt, 3=DroneSortieOptimizer, 4=GreedyVehicleReassignment, 5=RuinAndReconstruct
                 drone_actionable_count = state[1]
-                valid_actions = [1, 2, 4, 5] if drone_actionable_count == 0 else [1, 2, 3, 4, 5]
+                # Additionally, RuinAndReconstruct (action=5) is only enabled when allow_ruin=True.
+                if drone_actionable_count == 0:
+                    valid_actions = [1, 2, 4]
+                else:
+                    valid_actions = [1, 2, 3, 4]
+                if allow_ruin:
+                    valid_actions.append(5)
                 a = self.ls_agent.select_action(state, valid_actions=valid_actions)
                 op = self.ls_ops[a - 1]
 

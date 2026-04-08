@@ -62,30 +62,30 @@ def main():
         print(f"Vehicle IDs: {fleet.all_vehicle_ids()}")
 
         # --- Run HGA (pure) ---
-        print(f"\nRunning HGA: {hga_params.G} generations, PL={hga_params.PL}...\n")
-        hga = HGA(fleet, hga_params, required_ids, truck_dist, drone_dist, edge_info, truck_path)
-        t0 = time.perf_counter()
-        best_hga = hga.run(verbose=True)
-        runtime_hga_s = time.perf_counter() - t0
+        # print(f"\nRunning HGA: {hga_params.G} generations, PL={hga_params.PL}...\n")
+        # hga = HGA(fleet, hga_params, required_ids, truck_dist, drone_dist, edge_info, truck_path)
+        # t0 = time.perf_counter()
+        # best_hga = hga.run(verbose=True)
+        # runtime_hga_s = time.perf_counter() - t0
 
-        print("\n" + "=" * 55)
-        print("  Algorithm     : HGA")
-        print(f"  Best makespan : {best_hga.makespan:.4f} hours")
-        print(f"  Fitness       : {best_hga.fitness:.4f}")
-        print("=" * 55)
+        # print("\n" + "=" * 55)
+        # print("  Algorithm     : HGA")
+        # print(f"  Best makespan : {best_hga.makespan:.4f} hours")
+        # print(f"  Fitness       : {best_hga.fitness:.4f}")
+        # print("=" * 55)
 
-        append_result(
-            results_path,
-            algorithm="HGA",
-            datasetname=inst.name,
-            num_trucks=fleet.num_trucks,
-            drones_per_truck=fleet.drones_per_truck,
-            makespan_hours=best_hga.makespan,
-            fitness=best_hga.fitness,
-            runtime_seconds=runtime_hga_s,
-            service_seq=best_hga.chromosome.service_sequence,
-            vehicle_asgn=best_hga.chromosome.vehicle_assignment,
-        )
+        # append_result(
+        #     results_path,
+        #     algorithm="HGA",
+        #     datasetname=inst.name,
+        #     num_trucks=fleet.num_trucks,
+        #     drones_per_truck=fleet.drones_per_truck,
+        #     makespan_hours=best_hga.makespan,
+        #     fitness=best_hga.fitness,
+        #     runtime_seconds=runtime_hga_s,
+        #     service_seq=best_hga.chromosome.service_sequence,
+        #     vehicle_asgn=best_hga.chromosome.vehicle_assignment,
+        # )
 
         # --- Run RLHGA ---
         print(f"\nRunning RLHGA: {hga_params.G} generations, PL={hga_params.PL}...\n")
