@@ -90,7 +90,7 @@ Mặc định:
 
 ### Ràng buộc hợp lệ
 
-- `nodes <= grid * grid` (với 10×10 thì `nodes <= 100`)
+- `nodes <= (grid*coord-scale)^2` (vd: 10×10 với scale 10 ⇒ tối đa 10,000 nodes)
 - Để đồ thị liên thông: `edges >= nodes - 1`
 - `edges <= nodes*(nodes-1)/2`
 - `1 <= required <= edges`
@@ -111,3 +111,58 @@ Nếu muốn dùng như hàm Python, xem `utils/dataset_generator.py`:
 
 - `generate_urpp_grid_instance_text(...)`
 - `write_urpp_grid_instance(...)`
+
+---
+
+## ▶️ Chạy thực nghiệm (main.py)
+
+`main.py` hiện là entrypoint chạy thực nghiệm theo batch (mặc định chạy trên 5 instance và ghi kết quả ra `results.csv`).
+
+### 1) Cài môi trường
+
+Từ thư mục repo:
+
+```powershell
+python -m venv venv
+./venv/Scripts/Activate.ps1
+pip install -r requirements.txt
+```
+
+### 2) Chuẩn bị dataset (đúng đường dẫn mà main.py đang load)
+
+Mặc định `main.py` sẽ load các file:
+
+- `dataset/N50/N50E200R50/N50E200R50_01.txt`
+- ...
+- `dataset/N50/N50E200R50/N50E200R50_05.txt`
+
+Nếu chưa có, bạn có thể sinh đúng 5 file này bằng generator (chỉ cần chạy 5 lần với `--index` tương ứng):
+
+```powershell
+python -m utils.dataset_generator --nodes 50 --edges 200 --required 50 --index 1
+python -m utils.dataset_generator --nodes 50 --edges 200 --required 50 --index 2
+python -m utils.dataset_generator --nodes 50 --edges 200 --required 50 --index 3
+python -m utils.dataset_generator --nodes 50 --edges 200 --required 50 --index 4
+python -m utils.dataset_generator --nodes 50 --edges 200 --required 50 --index 5
+```
+
+### 3) Chạy
+
+```powershell
+python main.py
+```
+
+Trong quá trình chạy, chương trình sẽ in tiến trình và kết quả tốt nhất (makespan/fitness) cho từng instance.
+
+### 4) Kết quả output
+
+- Kết quả được **append** vào file `results.csv` ở thư mục gốc repo.
+- Mỗi instance hiện ghi 2 dòng (HGA và RLHGA).
+- Nếu muốn chạy lại từ đầu mà không cộng dồn, hãy đổi tên hoặc xoá `results.csv` trước khi chạy.
+- Với RLHGA, Q-table của agent Q-learning sẽ được export ra CSV trong `outputs/qtable/` (mỗi instance 1 file).
+
+### 5) Tuỳ biến nhanh
+
+- Đổi danh sách instance / thư mục dataset: sửa vòng lặp trong `main.py` (đang chạy idx 1..5 cho bộ `N50E200R50`).
+- Đổi tham số thuật toán: chỉnh trong `configs/algorithm_params.py` (ví dụ `G`, `PL`, `seed`).
+- GA/RLGA hiện đang comment sẵn trong `main.py`; muốn chạy thêm thì bỏ comment các block tương ứng.

@@ -25,20 +25,31 @@ class DiversityCalculator:
                 ind.diversity = 0.0
             return
 
-        # Precompute pairwise distances
+        # Precompute per-individual arrays once to reduce inner-loop overhead.
         R = population[0].chromosome.length
+        abs_seqs = [list(map(abs, ind.chromosome.service_sequence)) for ind in population]
+        asgns = [ind.chromosome.vehicle_assignment for ind in population]
 
         for i, ind in enumerate(population):
-            distances = []
-            for j, other in enumerate(population):
+            # Track the two nearest neighbors without sorting the full distance list.
+            best1 = float("inf")
+            best2 = float("inf")
+
+            a_seq = abs_seqs[i]
+            a_asg = asgns[i]
+
+            for j in range(n):
                 if i == j:
                     continue
-                d = self._hamming(ind.chromosome, other.chromosome, R)
-                distances.append(d)
+                d = self._hamming_arrays(a_seq, a_asg, abs_seqs[j], asgns[j], R)
+                if d < best1:
+                    best2 = best1
+                    best1 = d
+                elif d < best2:
+                    best2 = d
 
-            distances.sort()
             # Trung bình 2 nearest neighbors
-            ind.diversity = (distances[0] + distances[1]) / 2.0 if len(distances) >= 2 else distances[0]
+            ind.diversity = (best1 + best2) / 2.0
 
     # ------------------------------------------------------------------
 
@@ -50,6 +61,17 @@ class DiversityCalculator:
             if abs(c1.service_sequence[i]) != abs(c2.service_sequence[i]):
                 diff += 1
             elif c1.vehicle_assignment[i] != c2.vehicle_assignment[i]:
+                diff += 1
+        return diff / R
+
+    @staticmethod
+    def _hamming_arrays(a_seq: list[int], a_asg: list[int], b_seq: list[int], b_asg: list[int], R: int) -> float:
+        """Normalized Hamming distance using precomputed arrays (same result as _hamming)."""
+        diff = 0
+        for i in range(R):
+            if a_seq[i] != b_seq[i]:
+                diff += 1
+            elif a_asg[i] != b_asg[i]:
                 diff += 1
         return diff / R
 

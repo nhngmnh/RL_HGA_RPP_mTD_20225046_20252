@@ -105,8 +105,6 @@ class GA:
 
         # Step 2: vòng lặp GA
         for gen in range(1, self.params.G + 1):
-            # Per-generation decode cache
-            self.evaluator.reset_cache()
             prev_best = self.best_individual.makespan
 
             # Sinh offspring đến PH

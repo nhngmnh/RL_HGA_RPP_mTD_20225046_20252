@@ -1,9 +1,6 @@
 """
 RPP-mTD: Rural Postman Problem with multiple Trucks and Drones
 Hybrid Genetic Algorithm — entry point
-
-Dataset demo (URPP-like):
-    main.py mặc định load instance N10E30R10_01 từ thư mục dataset/N10.
 """
 
 import sys
@@ -15,7 +12,6 @@ sys.path.insert(0, os.path.dirname(__file__))
 from algorithms.ga import GA
 from algorithms.hga import HGA
 from algorithms.rl_hga import RLHGA
-from algorithms.rl_ga import RLGA
 from configs.algorithm_params import get_ga_params, get_hga_params
 from configs.fleet_params import get_fleet_config
 from utils.dataset_loader import load_urpp_like_instance
@@ -31,18 +27,20 @@ def main():
     print("=" * 55)
 
     results_path = os.path.join(os.path.dirname(__file__), "results.csv")
+    qtable_dir = os.path.join(os.path.dirname(__file__), "outputs", "qtable")
+    os.makedirs(qtable_dir, exist_ok=True)
 
     hga_params = get_hga_params()
     ga_params = get_ga_params()
 
-    # --- Batch run: N50E200R50_01.txt .. N50E200R50_05.txt ---
+    # --- Batch run: N20E50R20_01.txt .. N20E50R20_05.txt ---
     for idx in range(1, 6):
-        instance_filename = f"N50E200R50_{idx:02d}.txt"
+        instance_filename = f"N20E50R20_{idx:02d}.txt"
         instance_path = os.path.join(
             os.path.dirname(__file__),
             "dataset",
-            "N50",
-            "N50E200R50",
+            "N20",
+            "N20E50R20",
             instance_filename,
         )
         inst = load_urpp_like_instance(instance_path)
@@ -96,6 +94,12 @@ def main():
         best_rl = rlhga.run(verbose=True)
         runtime_rl_s = time.perf_counter() - t1
 
+        # --- Export Q-table (RL agent) ---
+        safe_name = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in str(inst.name))
+        qtable_path = os.path.join(qtable_dir, f"qtable_RLHGA_{safe_name}_{idx:02d}.csv")
+        rlhga.ls_agent.export_q_table(qtable_path)
+        print(f"Saved Q-table to: {qtable_path}")
+
         print("\n" + "=" * 55)
         print("  Algorithm     : RLHGA")
         print(f"  Best makespan : {best_rl.makespan:.4f} hours")
@@ -103,8 +107,8 @@ def main():
         print("=" * 55)
 
         print("\n" + "-" * 55)
-        print(f"Compare (RLHGA - HGA) makespan: {best_rl.makespan - best_hga.makespan:+.4f} hours")
-        print(f"Compare (RLHGA - HGA) runtime : {runtime_rl_s - runtime_hga_s:+.2f} s")
+        # print(f"Compare (RLHGA - HGA) makespan: {best_rl.makespan - best_hga.makespan:+.4f} hours")
+        # print(f"Compare (RLHGA - HGA) runtime : {runtime_rl_s - runtime_hga_s:+.2f} s")
         print("-" * 55)
 
         append_result(
@@ -144,37 +148,6 @@ def main():
         #     runtime_seconds=runtime_ga_s,
         #     service_seq=best_ga.chromosome.service_sequence,
         #     vehicle_asgn=best_ga.chromosome.vehicle_assignment,
-        # )
-
-        # # --- Run RLGA ---
-        # print(f"\nRunning RLGA: {ga_params.G} generations, PL={ga_params.PL}...\n")
-        # rlga = RLGA(fleet, ga_params, required_ids, truck_dist, drone_dist, edge_info, truck_path)
-        # t2 = time.perf_counter()
-        # best_rlga = rlga.run(verbose=True)
-        # runtime_rlga_s = time.perf_counter() - t2
-
-        # print("\n" + "=" * 55)
-        # print("  Algorithm     : RLGA")
-        # print(f"  Best makespan : {best_rlga.makespan:.4f} hours")
-        # print(f"  Fitness       : {best_rlga.fitness:.4f}")
-        # print("=" * 55)
-
-        # print("\n" + "-" * 55)
-        # # print(f"Compare (RLGA - GA) makespan: {best_rlga.makespan - best_ga.makespan:+.4f} hours")
-        # # print(f"Compare (RLGA - GA) runtime : {runtime_rlga_s - runtime_ga_s:+.2f} s")
-        # print("-" * 55)
-
-        # append_result(
-        #     results_path,
-        #     algorithm="RLGA",
-        #     datasetname=inst.name,
-        #     num_trucks=fleet.num_trucks,
-        #     drones_per_truck=fleet.drones_per_truck,
-        #     makespan_hours=best_rlga.makespan,
-        #     fitness=best_rlga.fitness,
-        #     runtime_seconds=runtime_rlga_s,
-        #     service_seq=best_rlga.chromosome.service_sequence,
-        #     vehicle_asgn=best_rlga.chromosome.vehicle_assignment,
         # )
 
 

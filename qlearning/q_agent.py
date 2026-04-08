@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Hashable, Iterable
+from typing import Any, Hashable, Iterable
+import csv
+import json
+from pathlib import Path
 import random
 
 
@@ -107,3 +110,89 @@ class QLearningAgent:
         else:
             # Greedy-only phase
             self.epsilon = 0.0
+
+    @staticmethod
+    def _flatten_state(state: Any) -> list[Any] | None:
+        """Best-effort flattening for tuple/list states.
+
+        Returns a flat list if the state is composed only of JSON-serializable primitives
+        (possibly nested tuples/lists). Otherwise returns None.
+        """
+
+        primitives = (int, float, str, bool, type(None))
+
+        def rec(x: Any, out: list[Any]) -> bool:
+            if isinstance(x, primitives):
+                out.append(x)
+                return True
+            if isinstance(x, (tuple, list)):
+                for y in x:
+                    if not rec(y, out):
+                        return False
+                return True
+            return False
+
+        flat: list[Any] = []
+        if rec(state, flat):
+            return flat
+        return None
+
+    @staticmethod
+    def _state_to_json(state: Any) -> str:
+        try:
+            return json.dumps(state, ensure_ascii=False)
+        except Exception:
+            return repr(state)
+
+    def export_q_table(self, csv_path: str | Path) -> Path:
+        """Export current Q-table to a CSV file.
+
+        Output columns:
+        - If states are consistently flattenable: s0..sN-1 plus q_1..q_A
+        - Otherwise: state_json plus q_1..q_A
+        """
+
+        path = Path(csv_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        items = list(self.q.items())
+
+        # Determine whether we can expand state into columns
+        flats: list[list[Any] | None] = [self._flatten_state(s) for s, _ in items]
+        lengths = {len(f) for f in flats if f is not None}
+        can_expand = bool(items) and (len(lengths) == 1) and all(f is not None for f in flats)
+        state_len = next(iter(lengths)) if can_expand else 0
+
+        q_headers = [f"q_{i}" for i in range(1, self.num_actions + 1)]
+        if can_expand:
+            fieldnames = [f"s{i}" for i in range(state_len)] + q_headers
+        else:
+            fieldnames = ["state_json"] + q_headers
+
+        def sort_key(kv: tuple[Any, list[float]]):
+            s = kv[0]
+            try:
+                return (0, s)  # type: ignore[return-value]
+            except Exception:
+                return (1, self._state_to_json(s))
+
+        items_sorted = sorted(items, key=sort_key)
+
+        with path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for (state, q_row), flat in zip(items_sorted, [self._flatten_state(s) for s, _ in items_sorted]):
+                row: dict[str, Any] = {}
+                if can_expand and flat is not None:
+                    for i, v in enumerate(flat):
+                        row[f"s{i}"] = v
+                else:
+                    row["state_json"] = self._state_to_json(state)
+
+                for i, qv in enumerate(q_row, start=1):
+                    row[f"q_{i}"] = float(qv)
+
+                writer.writerow(row)
+
+        return path
