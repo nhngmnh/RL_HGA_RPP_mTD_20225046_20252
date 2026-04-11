@@ -15,6 +15,7 @@ from evaluation import Decoder, FitnessEvaluator, DiversityCalculator, Populatio
 
 from configs.qlearning_params import get_qlearning_config
 from qlearning import QLearningAgent, build_ls_state
+from qlearning.ls_state import count_actionable_drones
 from qlearning.q_agent import QLearningConfig
 
 
@@ -207,22 +208,25 @@ class RLHGA:
         ls_map: dict[int, Individual] = {}
         for ind in to_improve:
             current = ind
+            stagnation_steps = 0
             for _ in range(self.params.ls_steps):
                 # RL chooses one of 5 LS actions
                 state = build_ls_state(
                     current.chromosome,
                     self.fleet,
                     self.decoder,
-                    gen=gen,
-                    total_gens=self.params.G,
                     sortie_min_len=self.params.sortie_min_len,
                     system_finish_times=current.system_finish_times,
-                    w_inf=self.evaluator.w_inf,
+                    stagnation=stagnation_steps,
                 )
 
                 # If no drone is actionable, skip DroneSortieOptimizer action.
                 # Actions are 1-based: 1=SubsequenceReversal, 2=OrOpt, 3=DroneSortieOptimizer, 4=GreedyVehicleReassignment, 5=RuinAndReconstruct
-                drone_actionable_count = state[1]
+                drone_actionable_count = count_actionable_drones(
+                    current.chromosome,
+                    self.fleet,
+                    sortie_min_len=self.params.sortie_min_len,
+                )
                 # Additionally, RuinAndReconstruct (action=5) is only enabled when allow_ruin=True.
                 if drone_actionable_count == 0:
                     valid_actions = [1, 2, 4]
@@ -239,6 +243,11 @@ class RLHGA:
 
                 reward = max(0.0, before - after_ind.makespan)
                 self.ls_agent.update(state, a, reward, done=True)
+
+                if after_ind.makespan < before:
+                    stagnation_steps = 0
+                else:
+                    stagnation_steps += 1
 
                 current = after_ind
             improved.append(current)
